@@ -22,7 +22,6 @@ public:
 	static std::string folderOpenDialog();
 	static std::string sanitizeFilename(const char* filename);
 	static std::vector<std::string> getEnvarNames();
-	static bool strHasEnvars(const std::string &str);
 	static std::string strToLower(const std::string &str);
 	static std::string trim(std::string str);
 

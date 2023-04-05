@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "exceptions.h"
 #include "defines.h"
+#include "tinyfiledialogs.h"
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -244,72 +245,19 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 
 DWORD utils::runCmd(const string &cmd, bool showConsole)
 {
-	/*
-	BOOL bSuccess = TRUE;
+	//string terminalCmd = "gnome-terminal -- ";
+	string terminalCmd = "x-terminal-emulator -e ";
 
-	PROCESS_INFORMATION piProcInfo; 
-	STARTUPINFO siStartInfo;
-
-	ZeroMemory( &piProcInfo, sizeof(PROCESS_INFORMATION) );
-	ZeroMemory( &siStartInfo, sizeof(STARTUPINFO) );
-	siStartInfo.cb = sizeof(STARTUPINFO); 
-
-	DWORD processFlags = CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB;
+	string command = "";
 
 	if(showConsole)
 	{
-		processFlags |= CREATE_NEW_CONSOLE;
-	}
-	else
-	{
-		processFlags |= CREATE_NO_WINDOW;
+		command.append(terminalCmd);
 	}
 
-	if(cmd.length() > CMD_MAX_LEN)
-	{
-		throw grb_exception("Command line too big");
-	}
+	command.append(cmd);
 
-	PLOG_INFO << "custom cmd: " << cmd;
-
-	WCHAR cmdWchar[CMD_MAX_LEN] = { '\0' };
-	StringCchCopyW(cmdWchar, CMD_MAX_LEN, utf8::widen(cmd).c_str());
-
-	// Create the child process. 
-	bSuccess = CreateProcessW(
-		NULL,		   // No module name (use command line)
-		cmdWchar,      // command line
-		NULL,          // process security attributes 
-		NULL,          // primary thread security attributes 
-		FALSE,         // handles not inherited 
-		processFlags,  // creation flags 
-		NULL,          // use parent environment
-		NULL,          // use parent's current directory 
-		&siStartInfo,  // STARTUPINFO pointer 
-		&piProcInfo);  // receives PROCESS_INFORMATION 
-
-	// If an error occurs, exit the application. 
-	if (!bSuccess) 
-	{
-		string msg = "Create process failed with error code ";
-		msg.append( std::to_string(GetLastError()) );
-		throw grb_exception(msg.c_str());
-	}
-
-	// Process has exited - check its exit code
-	WaitForSingleObject(piProcInfo.hProcess, INFINITE);
-	DWORD exitCode;
-	GetExitCodeProcess(piProcInfo.hProcess, &exitCode);
-	PLOG_INFO << "custom cmd exit code is " << exitCode;
-
-	// Close handles to the child process and its primary thread.
-	// Some applications might keep these handles to monitor the status
-	// of the child process, for example. 
-	CloseHandle(piProcInfo.hProcess);
-	CloseHandle(piProcInfo.hThread);
-
-	return exitCode;
-	*/
+	return system(command.c_str());
 }
 
 void utils::strReplaceAll(string &data, const string &toSearch, const string &replaceStr)
@@ -342,111 +290,14 @@ vector<string> utils::strSplit(const string &str, const char delim)
 
 string utils::fileSaveDialog(const string &filename)
 {
-	/*
-	//UI in multiple threads bad
-	std::lock_guard<std::mutex> lock(guiMutex);
-
-	string path = "";
-	bool cancelled = false;
-
-	CoInitialize(nullptr);
-	IFileDialog *pfd = NULL;
-	HRESULT hr = CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
-	if (SUCCEEDED(hr))
-	{
-		DWORD dwFlags;
-		// get the options first in order not to override existing options.
-		if (SUCCEEDED(pfd->GetOptions(&dwFlags)))
-		{
-			// set the options
-			if (SUCCEEDED(pfd->SetOptions(dwFlags | FOS_OVERWRITEPROMPT | FOS_NOCHANGEDIR | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM)))
-			{
-				// set the default file name in dialog
-				if (SUCCEEDED(pfd->SetFileName(utf8::widen(filename).c_str())))
-				{
-					// show dialog
-					HRESULT res = pfd->Show(GetForegroundWindow());
-					if(res == HRESULT_FROM_WIN32(ERROR_CANCELLED))
-					{
-						cancelled = true;
-					}
-					if (SUCCEEDED(res))
-					{
-						IShellItem *psiResult;
-						if (SUCCEEDED(pfd->GetResult(&psiResult)))
-						{
-							PWSTR pszFilePath = NULL;
-							if (SUCCEEDED(psiResult->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath)))
-							{
-								path = utf8::narrow(pszFilePath);
-							}
-							psiResult->Release();
-						}
-					}
-				}
-			}
-		}
-		pfd->Release();
-	}
-
-	if(path.length() == 0 && !cancelled)
-	{
-		throw grb_exception("failed to show save file dialog"); 
-	}
-
-	return path;
-	*/
+	const char* path = tinyfd_saveFileDialog("Save file as", filename.c_str(), 0, NULL, NULL );
+	return (path == NULL)? "" : path;
 }
 
 string utils::folderOpenDialog()
 {
-	/*
-	//UI in multiple threads bad
-	std::lock_guard<std::mutex> lock(guiMutex);
-
-	string path = "";
-	bool cancelled = false;
-
-	CoInitialize(nullptr);
-	IFileDialog *pfd = NULL;
-	HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
-	if (SUCCEEDED(hr))
-	{
-		DWORD dwFlags;
-		if (SUCCEEDED(pfd->GetOptions(&dwFlags)))
-		{
-			if (SUCCEEDED(pfd->SetOptions(dwFlags | FOS_OVERWRITEPROMPT | FOS_NOCHANGEDIR | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM | FOS_PICKFOLDERS)))
-			{
-				HRESULT res = pfd->Show(GetForegroundWindow());
-				if(res == HRESULT_FROM_WIN32(ERROR_CANCELLED))
-				{
-					cancelled = true;
-				}
-				if (SUCCEEDED(res))
-				{
-					IShellItem *psiResult;
-					if (SUCCEEDED(pfd->GetResult(&psiResult)))
-					{
-						PWSTR pszFilePath = NULL;
-						if (SUCCEEDED(psiResult->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath)))
-						{
-							path = utf8::narrow(pszFilePath) + "\\";
-						}
-						psiResult->Release();
-					}
-				}
-			}
-		}
-		pfd->Release();
-	}
-
-	if(path.length() == 0 && !cancelled)
-	{
-		throw grb_exception("failed to show open folder dialog"); 
-	}
-
-	return path;
-	*/
+	const char* path = tinyfd_selectFolderDialog("Select folder to save files", NULL);
+	return (path == NULL)? "" : path;
 }
 
 string utils::sanitizeFilename(const char* filename)
@@ -485,65 +336,6 @@ string utils::sanitizeFilename(const char* filename)
 	}
 
 	return newName;
-}
-
-vector<string> utils::getEnvarNames()
-{
-	/*
-	vector<string> envars;
-
-	LPWSTR lpszVariable; 
-	LPWCH lpvEnv; 
-
-	// Get a pointer to the environment block. 
-	lpvEnv = GetEnvironmentStrings();
-
-	// If the returned pointer is NULL, exit.
-	if (lpvEnv == NULL)
-	{
-		return envars;
-	}
-
-	// Variable strings are separated by NULL byte, and the block is 
-	// terminated by a NULL byte. 
-	lpszVariable = (LPTSTR) lpvEnv;
-
-	while (*lpszVariable)
-	{
-		string varFull = utf8::narrow(lpszVariable);
-
-		if(varFull.find('=') != 0){
-			//there are some weird variables that start with '=' and we don't want them 
-			//https://devblogs.microsoft.com/oldnewthing/20100506-00/?p=14133
-			//this doesn't seem to be documented anywhere so I'm not sure if all these weird variables start with '='
-			//only time will tell
-			string varName = varFull.substr(0, varFull.find('='));
-			envars.push_back(varName);
-		}
-
-		lpszVariable += lstrlen(lpszVariable) + 1;
-	}
-
-	FreeEnvironmentStrings(lpvEnv);
-
-	return envars;
-	*/
-}
-
-bool utils::strHasEnvars(const string &str)
-{
-	vector<string> envars = utils::getEnvarNames();
-	string strl = utils::strToLower(str);
-
-	for(int i=0; i<envars.size(); i++)
-	{
-		string var = "%" + utils::strToLower(envars[i]) + "%";
-		if(strl.find(var) != string::npos){
-			return true;
-		}
-	}
-
-	return false;
 }
 
 string utils::strToLower(const string &str)

