@@ -175,9 +175,11 @@ void handle_download(const Json &msg)
 {
 	try
 	{
-		const Json &job = msg["job"];
-		string jobJSON = job.ToString();
-		flashgot_job(jobJSON);
+		//const Json &job = msg["job"];
+		//string jobJSON = job.ToString();
+		//flashgot_job(jobJSON);
+
+		throw grb_exception("NOT SUPPORTED ON LINUX");
 	}
 	catch(grb_exception &e)
 	{
