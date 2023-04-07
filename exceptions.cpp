@@ -26,3 +26,12 @@ const char* grb_exception::what() const throw()
 {
 	return message.c_str();
 }
+
+
+
+grb_exception_gui::grb_exception_gui(const char* msg) : grb_exception(msg)
+{
+}
+grb_exception_gui::~grb_exception_gui(void)
+{
+}

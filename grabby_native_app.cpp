@@ -308,7 +308,7 @@ void custom_command_fork(string procName, string cmd, const string filename, boo
 			{
 				if(cmd.find(placeholder) == string::npos)
 				{
-					throw grb_exception("You have enabled the save-as dialog but you haven't specified [OUTPUT] in your arguments");
+					throw grb_exception_gui("You have enabled the save-as dialog but you haven't specified [OUTPUT] in your arguments");
 				}
 
 				savePath = utils::fileSaveDialog(filename);
@@ -341,6 +341,10 @@ void custom_command_fork(string procName, string cmd, const string filename, boo
 
 			system(command.c_str());
 
+		}
+		catch(grb_exception_gui e)
+		{
+			messaging::sendMessage(MSGTYP_ERR_GUI, e.what());
 		}
 		catch(exception &e)
 		{
