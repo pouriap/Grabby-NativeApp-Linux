@@ -339,9 +339,9 @@ void custom_command_fork(string procName, string cmd, const string filename, boo
 		}
 		catch(exception &e)
 		{
-			string msg = "Error executing command line: ";
+			string msg = "Error executing custom command: ";
 			msg.append(e.what());
-			messaging::sendMessage(MSGTYP_ERR, msg);
+			messaging::sendMessage(MSGTYP_ERR_GUI, msg);
 		}
 		catch(...){}	//ain't nothing we can do if we're here
 

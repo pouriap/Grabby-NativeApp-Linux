@@ -30,4 +30,5 @@
 
 #define MSGTYP_ERR "app_error"
 #define MSGTYP_MSG "app_message"
+#define MSGTYP_ERR_GUI "app_error_gui"
 #define MSGTYP_UNSUPP "unsupported"
