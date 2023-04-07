@@ -39,6 +39,7 @@ int main(int argc, char *argv[])
 		plog::init(plog::debug, "log.txt", 1000*1000, 2);
 		freopen(NULL, "rb", stdin);
 		freopen(NULL, "wb", stdout);
+		utils::getTerminalCmd();
 	}
 	catch(exception &e)
 	{
@@ -195,14 +196,14 @@ void handle_userCMD(const Json &msg)
 {
 	try
 	{
+		string procName = msg["procName"].AsString();
 		string cmd = msg["cmd"].AsString();
 		string filename = msg["filename"].AsString();
 		bool showConsole = msg["showConsole"].AsBool();
 		bool showSaveas = msg["showSaveas"].AsBool();
 		cmd = from_base64(cmd);
 
-		std::thread th1(custom_command_th, cmd, filename, showConsole, showSaveas);
-		th1.detach();
+		custom_command_fork(procName, cmd, filename, showConsole, showSaveas);
 	}
 	catch(grb_exception &e)
 	{
@@ -285,38 +286,67 @@ void flashgot_job(const string &jobJSON)
 	}
 }
 
-void custom_command_th(string cmd, const string filename, bool showConsole, bool showSaveas)
+void custom_command_fork(string procName, string cmd, const string filename, bool showConsole, bool showSaveas)
 {
-	try
+	int pid = fork();
+
+	if(pid == 0)
 	{
-		string savePath = "";
-
-		if(showSaveas)
+		try
 		{
-			savePath = utils::fileSaveDialog(filename);
+			string savePath = "";
 
-			// if user chose cancel in browse dialog do nothing
-			if(savePath.length() == 0)
+			if(showSaveas)
 			{
-				return;
+				savePath = utils::fileSaveDialog(filename);
+
+				// if user chose cancel in browse dialog do nothing
+				if(savePath.length() == 0)
+				{
+					return;
+				}
+
+				string placeholder = "*$*OUTPUT*$*";
+
+				if(cmd.find(placeholder) == string::npos)
+				{
+					throw grb_exception("[OUTPUT] argument not specified");
+				}
+
+				cmd.replace(cmd.find(placeholder), placeholder.length(), savePath);
 			}
 
-			string placeholder = "*$*FOLDER*$*";
+			pair<string, string> terminalCmd = utils::getTerminalCmd();
+			string command;
 
-			cmd.replace(cmd.find(placeholder), placeholder.length(), savePath);
+			//so we need to show console and we do it with gnome-terminal --
+			//but we don't want to input unsatized data to command line
+			//so we take the process name and the cmd string separately
+			//then we open a new gnome-terminal and start our 'launcher' which takes the process name as its first parameter
+			//now launcher can use the execv() command to safely launch the requested program
+			if(showConsole)
+			{
+				 command = terminalCmd.first + " " + terminalCmd.second + " ./launcher '" + procName + "' " + cmd;
+			}
+			else
+			{
+				command = "./launcher '" + procName + "' " + cmd;
+			}
+
+			PLOG_INFO << "the command i am sending be: " <<  command;
+			system(command.c_str());
+
 		}
+		catch(exception &e)
+		{
+			string msg = "Error executing command line: ";
+			msg.append(e.what());
+			messaging::sendMessage(MSGTYP_ERR, msg);
+		}
+		catch(...){}	//ain't nothing we can do if we're here
 
-		utils::runCmd(cmd, showConsole);
-
+		exit(0);
 	}
-	catch(exception &e)
-	{
-		string msg = "Error executing command line: ";
-		msg.append(e.what());
-		messaging::sendMessage(MSGTYP_ERR, msg);
-	}
-	catch(...){}	//ain't nothing we can do if we're here
-
 }
 
 void ytdl_info_th(const string url, const string dlHash, ytdl_args *arger)

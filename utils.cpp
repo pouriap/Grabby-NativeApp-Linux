@@ -243,23 +243,6 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 
 }
 
-DWORD utils::runCmd(const string &cmd, bool showConsole)
-{
-	//string terminalCmd = "gnome-terminal -- ";
-	string terminalCmd = "x-terminal-emulator -e ";
-
-	string command = "";
-
-	if(showConsole)
-	{
-		command.append(terminalCmd);
-	}
-
-	command.append(cmd);
-
-	return system(command.c_str());
-}
-
 void utils::strReplaceAll(string &data, const string &toSearch, const string &replaceStr)
 {
 	size_t pos = data.find(toSearch);
@@ -357,4 +340,36 @@ string utils::trim(string str)
 	str.erase(0, str.find_first_not_of(ws));
 
 	return str;
+}
+
+pair<string, string> utils::getTerminalCmd()
+{
+	pair<string, string> cmd;
+
+	if(cmd.first.length() && cmd.second.length())
+	{
+		return cmd;
+	}
+
+	if(!system("which gnome-terminal > /dev/null 2>&1"))
+	{
+		cmd.first = "gnome-terminal";
+		cmd.second = "--";
+	}
+	else if(!system("which konsole > /dev/null 2>&1"))
+	{
+		cmd.first = "konsole";
+		cmd.second = "e";
+	}
+	else if(!system("which xterm > /dev/null 2>&1"))
+	{
+		cmd.first = "xterm";
+		cmd.second = "e";
+	}
+	else
+	{
+		throw grb_exception("could not fina terminal emulator on system");
+	}
+
+	return cmd;
 }
