@@ -196,14 +196,22 @@ void handle_userCMD(const Json &msg)
 {
 	try
 	{
-		string procName = msg["procName"].AsString();
-		string cmd = msg["cmd"].AsString();
+		string exeName = msg["procName"].AsString();
 		string filename = msg["filename"].AsString();
 		bool showConsole = msg["showConsole"].AsBool();
 		bool showSaveas = msg["showSaveas"].AsBool();
-		cmd = from_base64(cmd);
 
-		custom_command_fork(procName, cmd, filename, showConsole, showSaveas);
+		Json argsJSON = msg["args"];
+		vector<string> args;
+
+		for(int i=0; i<argsJSON.Size(); i++)
+		{
+			string arg64 = argsJSON[i].AsString();
+			string arg = from_base64(arg64);
+			args.push_back(arg);
+		}
+
+		custom_command_fork(exeName, args, filename, showConsole, showSaveas);
 	}
 	catch(grb_exception &e)
 	{
@@ -286,7 +294,7 @@ void flashgot_job(const string &jobJSON)
 	}
 }
 
-void custom_command_fork(string procName, string cmd, const string filename, bool showConsole, bool showSaveas)
+void custom_command_fork(string exeName, vector<string> args, const string filename, bool showConsole, bool showSaveas)
 {
 	int pid = fork();
 
@@ -296,20 +304,31 @@ void custom_command_fork(string procName, string cmd, const string filename, boo
 		{
 			string savePath = "";
 			string placeholder = "*$*OUTPUT*$*";
+			bool outputSpecified = false;
 
 			// if output is specified in the command line then we have to have a save as dialog
 			// becuase it's meaningless without it
-			if(cmd.find(placeholder) != string::npos)
+			for(int i=0; i<args.size(); i++)
+			{
+				if(args[i].find(placeholder) != string::npos)
+				{
+					outputSpecified = true;
+					break;
+				}
+			}
+
+			if(outputSpecified)
 			{
 				showSaveas = true;
 			}
 
 			if(showSaveas)
 			{
-				if(cmd.find(placeholder) == string::npos)
+				if(!outputSpecified)
 				{
 					throw grb_exception_gui("You have enabled the save-as dialog but you haven't specified [OUTPUT] in your arguments");
 				}
+
 
 				savePath = utils::fileSaveDialog(filename);
 
@@ -319,11 +338,17 @@ void custom_command_fork(string procName, string cmd, const string filename, boo
 					return;
 				}
 
-				cmd.replace(cmd.find(placeholder), placeholder.length(), savePath);
+				if(outputSpecified)
+				{
+					for(int i=0; i<args.size(); i++)
+					{
+						if(args[i].find(placeholder) != string::npos)
+						{
+							args[i].replace(args[i].find(placeholder), placeholder.length(), savePath);
+						}
+					}
+				}
 			}
-
-			pair<string, string> terminalCmd = utils::getTerminalCmd();
-			string command;
 
 			//so we need to show console and we do it with gnome-terminal --
 			//but we don't want to input unsatized data to command line
@@ -332,15 +357,36 @@ void custom_command_fork(string procName, string cmd, const string filename, boo
 			//now launcher can use the execv() command to safely launch the requested program
 			if(showConsole)
 			{
-				 command = terminalCmd.first + " " + terminalCmd.second + " ./launcher '" + procName + "' " + cmd;
+				pair<string, string> terminalCmd = utils::getTerminalCmd();
+
+				args.insert(args.begin(), exeName);
+				args.insert(args.begin(), terminalCmd.second);
+				exeName = terminalCmd.first;
 			}
-			else
+
+			vector<const char*> _args;
+
+			//first element of the array should also be the executable name
+			_args.push_back(exeName.c_str());
+
+			//push the rest of the args
+			for(int i=0; i<args.size(); i++)
 			{
-				command = "./launcher '" + procName + "' " + cmd;
+				_args.push_back(args[i].c_str());
 			}
 
-			system(command.c_str());
+			//last element of the array should be NULL
+			_args.push_back(NULL);
 
+			string logCmd = "";
+			for(int i=0; i<args.size(); i++)
+			{
+				logCmd.append(_args[i]).append(" ");
+			}
+
+			PLOG_INFO << "custom-exe-name: " << exeName << " - custom-cmd: " << logCmd;
+
+			execvp(exeName.c_str(), const_cast<char* const*>(_args.data()));
 		}
 		catch(grb_exception_gui e)
 		{
