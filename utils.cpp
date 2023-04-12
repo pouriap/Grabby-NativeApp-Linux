@@ -243,6 +243,53 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 
 }
 
+void utils::execCmd(string &exeName, vector<string> &args, bool showConsole)
+{
+	//so we need to show console and we do it with gnome-terminal --
+	//but we don't want to input unsatized data to command line
+	//so we take the process name and the cmd string separately
+	//then we open a new gnome-terminal and start our 'launcher' which takes the process name as its first parameter
+	//now launcher can use the execv() command to safely launch the requested program
+	if(showConsole)
+	{
+		pair<string, string> terminalCmd = utils::getTerminalCmd();
+
+		args.insert(args.begin(), exeName);
+		args.insert(args.begin(), terminalCmd.second);
+		exeName = terminalCmd.first;
+	}
+
+	vector<const char*> _args;
+
+	//first element of the array should also be the executable name
+	_args.push_back(exeName.c_str());
+
+	//push the rest of the args
+	for(int i=0; i<args.size(); i++)
+	{
+		_args.push_back(args[i].c_str());
+	}
+
+	//last element of the array should be NULL
+	_args.push_back(NULL);
+
+	string logCmd = "";
+	for(int i=0; i<args.size(); i++)
+	{
+		logCmd.append(_args[i]).append(" ");
+	}
+
+	PLOG_INFO << "custom-exe-name: " << exeName << " - custom-cmd: " << logCmd;
+
+	int pid = fork();
+
+	if(pid == 0)
+	{
+		execvp(exeName.c_str(), const_cast<char* const*>(_args.data()));
+		exit(0);
+	}
+}
+
 void utils::strReplaceAll(string &data, const string &toSearch, const string &replaceStr)
 {
 	size_t pos = data.find(toSearch);

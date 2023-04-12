@@ -122,7 +122,7 @@ void processMessage(const Json &msg)
 		}
 		else if(type == MSGTYP_USER_CMD)
 		{
-			handle_userCMD(msg);
+			handle_custom_cmd(msg);
 		}
 		else if(type == MSGTYP_YTDL_INFO)
 		{
@@ -192,7 +192,7 @@ void handle_download(const Json &msg)
 //handled user-specified download manager cmd
 //TODO: Json library cannot handle double quotes in strings
 // for example {"name": "\"jack\""} becomes \"jack\" instead of just "jack"
-void handle_userCMD(const Json &msg)
+void handle_custom_cmd(const Json &msg)
 {
 	try
 	{
@@ -211,7 +211,8 @@ void handle_userCMD(const Json &msg)
 			args.push_back(arg);
 		}
 
-		custom_command_fork(exeName, args, filename, showConsole, showSaveas);
+		std::thread th1(custom_cmd_th, exeName, args, filename, showConsole, showSaveas);
+		th1.detach();
 	}
 	catch(grb_exception &e)
 	{
@@ -294,114 +295,72 @@ void flashgot_job(const string &jobJSON)
 	}
 }
 
-void custom_command_fork(string exeName, vector<string> args, const string filename, bool showConsole, bool showSaveas)
+void custom_cmd_th(string exeName, vector<string> args, const string filename, bool showConsole, bool showSaveas)
 {
-	int pid = fork();
-
-	if(pid == 0)
+	try
 	{
-		try
-		{
-			string savePath = "";
-			string placeholder = "*$*OUTPUT*$*";
-			bool outputSpecified = false;
+		string savePath = "";
+		string placeholder = "*$*OUTPUT*$*";
+		bool outputSpecified = false;
 
-			// if output is specified in the command line then we have to have a save as dialog
-			// becuase it's meaningless without it
-			for(int i=0; i<args.size(); i++)
+		// if output is specified in the command line then we have to have a save as dialog
+		// becuase it's meaningless without it
+		for(int i=0; i<args.size(); i++)
+		{
+			if(args[i].find(placeholder) != string::npos)
 			{
-				if(args[i].find(placeholder) != string::npos)
-				{
-					outputSpecified = true;
-					break;
-				}
+				outputSpecified = true;
+				break;
+			}
+		}
+
+		if(outputSpecified)
+		{
+			showSaveas = true;
+		}
+
+		if(showSaveas)
+		{
+			if(!outputSpecified)
+			{
+				throw grb_exception_gui("You have enabled the save-as dialog but you haven't specified [OUTPUT] in your arguments");
+			}
+
+
+			savePath = utils::fileSaveDialog(filename);
+
+			// if user chose cancel in browse dialog do nothing
+			if(savePath.length() == 0)
+			{
+				return;
 			}
 
 			if(outputSpecified)
 			{
-				showSaveas = true;
-			}
-
-			if(showSaveas)
-			{
-				if(!outputSpecified)
+				for(int i=0; i<args.size(); i++)
 				{
-					throw grb_exception_gui("You have enabled the save-as dialog but you haven't specified [OUTPUT] in your arguments");
-				}
-
-
-				savePath = utils::fileSaveDialog(filename);
-
-				// if user chose cancel in browse dialog do nothing
-				if(savePath.length() == 0)
-				{
-					return;
-				}
-
-				if(outputSpecified)
-				{
-					for(int i=0; i<args.size(); i++)
+					if(args[i].find(placeholder) != string::npos)
 					{
-						if(args[i].find(placeholder) != string::npos)
-						{
-							args[i].replace(args[i].find(placeholder), placeholder.length(), savePath);
-						}
+						args[i].replace(args[i].find(placeholder), placeholder.length(), savePath);
 					}
 				}
 			}
-
-			//so we need to show console and we do it with gnome-terminal --
-			//but we don't want to input unsatized data to command line
-			//so we take the process name and the cmd string separately
-			//then we open a new gnome-terminal and start our 'launcher' which takes the process name as its first parameter
-			//now launcher can use the execv() command to safely launch the requested program
-			if(showConsole)
-			{
-				pair<string, string> terminalCmd = utils::getTerminalCmd();
-
-				args.insert(args.begin(), exeName);
-				args.insert(args.begin(), terminalCmd.second);
-				exeName = terminalCmd.first;
-			}
-
-			vector<const char*> _args;
-
-			//first element of the array should also be the executable name
-			_args.push_back(exeName.c_str());
-
-			//push the rest of the args
-			for(int i=0; i<args.size(); i++)
-			{
-				_args.push_back(args[i].c_str());
-			}
-
-			//last element of the array should be NULL
-			_args.push_back(NULL);
-
-			string logCmd = "";
-			for(int i=0; i<args.size(); i++)
-			{
-				logCmd.append(_args[i]).append(" ");
-			}
-
-			PLOG_INFO << "custom-exe-name: " << exeName << " - custom-cmd: " << logCmd;
-
-			execvp(exeName.c_str(), const_cast<char* const*>(_args.data()));
 		}
-		catch(grb_exception_gui e)
-		{
-			messaging::sendMessage(MSGTYP_ERR_GUI, e.what());
-		}
-		catch(exception &e)
-		{
-			string msg = "Error executing custom command: ";
-			msg.append(e.what());
-			messaging::sendMessage(MSGTYP_ERR_GUI, msg);
-		}
-		catch(...){}	//ain't nothing we can do if we're here
 
-		exit(0);
+		utils::execCmd(exeName, args, showConsole);
+
 	}
+	catch(grb_exception_gui &e)
+	{
+		messaging::sendMessage(MSGTYP_ERR_GUI, e.what());
+	}
+	catch(exception &e)
+	{
+		string msg = "Error executing custom command: ";
+		msg.append(e.what());
+		messaging::sendMessage(MSGTYP_ERR, msg);
+	}
+	catch(...){}	//ain't nothing we can do if we're here
 }
 
 void ytdl_info_th(const string url, const string dlHash, ytdl_args *arger)

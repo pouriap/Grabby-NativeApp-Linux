@@ -15,6 +15,7 @@ public:
 	static ggicci::Json parseJSON(const std::string &JSONstr);
 	static process_result launchExe(const std::string &exeName, const std::vector<std::string> &args,
 		const std::string &input = "", const bool &kill = false, output_callback *callback = NULL );
+	static void execCmd(std::string &exeName, std::vector<std::string> &args, bool showConsole);
 	static void strReplaceAll(std::string &data, const std::string &toSearch, const std::string &replaceStr);
 	static std::vector<std::string> strSplit(const std::string &str, const char delim);
 	static std::string fileSaveDialog(const std::string &filename);
