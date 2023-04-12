@@ -515,7 +515,7 @@ process_result ytdl(const string &url, const string &dlHash, vector<string> &arg
 		ytdlKillSwitches.insert(pair<string, bool>(dlHash, false));
 		bool &killSwitch = ytdlKillSwitches[dlHash];
 
-		process_result res = utils::launchExe("yt-dlp.exe", args, "", killSwitch, callback);
+		process_result res = utils::launchExe("./yt-dlp", args, "", killSwitch, callback);
 
 		ytdlKillSwitches.erase(dlHash);
 
