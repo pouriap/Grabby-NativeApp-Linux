@@ -444,6 +444,12 @@ void ytdl_info_th(const string url, const string dlHash, ytdl_args *arger)
 
 		messaging::sendMessage(msg);
 	}
+	catch(exception &e)
+	{
+		string msg = "Error getting video info: ";
+		msg.append(e.what());
+		messaging::sendMessage(MSGTYP_ERR, msg);
+	}
 	catch(...){}	//ain't nothing we can do if we're here
 
 	delete arger;
@@ -516,6 +522,12 @@ process_result ytdl(const string &url, const string &dlHash, vector<string> &arg
 		bool &killSwitch = ytdlKillSwitches[dlHash];
 
 		process_result res = utils::launchExe("./yt-dlp", args, "", killSwitch, callback);
+
+		if(res.output.length() == 0)
+		{
+			//TODO: add to windows version
+			throw grb_exception("could not read output from ytdl");
+		}
 
 		ytdlKillSwitches.erase(dlHash);
 

@@ -11,7 +11,7 @@ class ytdl_args
 		std::vector<std::string> args;
 	public:
 		ytdl_args(const Json &msg);
-		~ytdl_args(void);
+		virtual ~ytdl_args(void);
 		void addArg(const std::string &arg);
 		virtual std::vector<std::string> getArgs() = 0;
 };

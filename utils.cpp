@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <mutex>
 #include <sstream>
 #include "utils.h"
@@ -6,7 +8,10 @@
 #include "tinyfiledialogs.h"
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <plog/Log.h>
 #include <plog/Initializers/RollingFileInitializer.h>
 
@@ -40,53 +45,33 @@ Json utils::parseJSON(const string &JSONstr)
 	}
 }
 
-// a pipe has two ends, a read handle and a write handle
-// the read handle reads from it, the write handle writes to it
-// we make two pipes and end up with 2 read handles and 2 write handles
-// we give one read handle and one write handle to the child
-// after we give it the handles we close them becuase the parent doesn't need them anymore
-// they will stay open in the child
-//our handles:
-//h_child_stdout_r
-//h_child_stdout_w
-//h_child_stdin_r
-//h_child_stdin_w
 process_result utils::launchExe(const string &exeName, const vector<string> &args, const string &input, 
-					   const bool &kill, output_callback *callback)
+					   const bool &killSwitch, output_callback *callback)
 {
-	//first part of cmd line has to also be the application name
-	string cmd = "";
-	cmd.append("'").append(exeName).append("'");
-
-	//create cmd line of arguments from the args vector
-	for(int i=0; i<args.size(); i++)
-	{
-		//if it's an empty string don't add anything to command line
-		if(args[i].length() == 0){
-			continue;
-		}
-		cmd.append(" ").append("'").append(args[i]).append("'");
-	}
-
-	//some checks
 	if(exeName.length() > MAX_PATH)
 	{
 		throw grb_exception("Executable file name is too big");
 	}
 
-	if(cmd.length() > CMD_MAX_LEN)
-	{
-		throw grb_exception("Command line too big");
-	}
+	vector<const char*> _args = utils::getExecArgs(exeName, args);
 
-	PLOG_INFO << "exe name: " << exeName << " - cmd: " << cmd;
-
-	FILE *proc;
+	int ch_fd_input, ch_fd_output;
 
 	// If an error occurs, exit the application.
-	if ((proc = popen(cmd.c_str(), "r")) == NULL)
+	int pid = utils::popen2(_args, &ch_fd_input, &ch_fd_output);
+	if(pid == -1)
 	{
-		string msg = "popen() failed - errno: " + errno;
+		string msg = "popen2() failed";
+		throw grb_exception(msg.c_str());
+	}
+
+	FILE* ch_inStream = fdopen(ch_fd_input, "w");
+	FILE* ch_outStream = fdopen(ch_fd_output, "r");
+
+	if(ch_inStream==NULL || ch_outStream==NULL)
+	{
+		string msg = "fdopen failed - errno: " + errno;
+		PLOG_ERROR << msg;
 		throw grb_exception(msg.c_str());
 	}
 
@@ -96,7 +81,7 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 		DWORD dwWritten;
 		DWORD dataLen = input.length();
 
-		dwWritten = fwrite(input.c_str(), sizeof(char), dataLen, proc);
+		dwWritten = fwrite(input.c_str(), sizeof(char), dataLen, ch_inStream);
 		fflush(stdout);
 
 		if(dwWritten!=dataLen)
@@ -105,6 +90,8 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 			//TODO: error
 		}
 	}
+
+	fclose(ch_inStream);
 
 	//we read the output of the process
 	const int BUFSIZE = 1024;
@@ -116,15 +103,18 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 	//keep reading process output until it exits or we receive a kill command
 	while(true)
 	{
+		if(feof(ch_outStream)){
+			break;
+		}
+
 		//fgets returns when it reaches a carriage return or eof
-		if(fgets(buf, BUFSIZE, proc) == NULL)
+		if(fgets(buf, BUFSIZE, ch_outStream) == NULL)
 		{
-			if(feof(proc)){
-				//cout << "EOF EOF" << endl;
-			} // TODO: end of file
-			if(ferror(proc)){
-				//cout<< "ERR ERR" << endl;
-			} // TODO: error
+			if(ferror(ch_outStream))
+			{
+				PLOG_INFO << "error reading output from process - ferror: " << ferror(ch_outStream);
+			}
+
 			break;
 		}
 
@@ -133,8 +123,7 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 		out.insert(out.end(), buf, buf+bytesRead);
 		totalRead += bytesRead;
 
-		string ass(buf, buf+bytesRead);
-		PLOG_INFO << "OUTPUT_LINE: " << ass;
+		string o(buf, buf+bytesRead);
 
 		//pass output to callback function
 		if(callback != NULL)
@@ -143,16 +132,28 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 			callback->call(outStr);
 		}
 
-		if(kill)
+		if(killSwitch)
 		{
-			//TODO: not implemented
-			// GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, piProcInfo.dwProcessId);
+			kill(pid, SIGINT);
 			break;
 		}
 	}
 
 	// wait for process to exit and check its exit code
-	DWORD exitCode = pclose(proc);
+	fclose(ch_outStream);
+	close(ch_fd_output);
+
+	int status;
+	int r;
+	do{
+		int r = waitpid(pid, &status, 0);
+	}while (r == -1 && errno == EINTR);
+
+	DWORD exitCode = 1;
+	if(WIFEXITED(status)){
+		exitCode = WEXITSTATUS(status);
+	}
+
 	PLOG_INFO << "process exit code is " << exitCode;
 
 	process_result res;
@@ -170,11 +171,15 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 	PLOG_INFO << "exe output be: " << res.output;
 
 	return res;
-
 }
 
-void utils::execCmd(string &exeName, vector<string> &args, bool showConsole)
+void utils::execCmd(string &exeName, vector<string> args, bool showConsole)
 {
+	if(exeName.length() > MAX_PATH)
+	{
+		throw grb_exception("Executable file name is too big");
+	}
+
 	//so we need to show console and we do it with gnome-terminal --
 	//but we don't want to input unsatized data to command line
 	//so we take the process name and the cmd string separately
@@ -189,6 +194,100 @@ void utils::execCmd(string &exeName, vector<string> &args, bool showConsole)
 		exeName = terminalCmd.first;
 	}
 
+	vector<const char*> _args = utils::getExecArgs(exeName, args);
+
+	int pid = fork();
+
+	if(pid == 0)
+	{
+		execvp(_args[0], const_cast<char* const*>(_args.data()));
+		exit(0);
+	}
+}
+
+pid_t utils::popen2(vector<const char*> args, int *fd_input, int *fd_output)
+{
+	const int READ_END = 0;
+	const int WRITE_END = 1;
+
+    int p_child_stdin[2] = {0};
+    int p_child_stdout[2] = {0};
+    pid_t pid;
+
+    //create two set of pipes
+    if(pipe2(p_child_stdin, O_CLOEXEC) != 0 || pipe2(p_child_stdout, O_CLOEXEC) != 0)
+    {
+    	PLOG_ERROR << "failed to create pipes";
+    	return -1;
+    }
+
+    pid = fork();
+
+    // if fork failed
+    if(pid == -1)
+    {
+    	close(p_child_stdin[WRITE_END]);
+    	close(p_child_stdin[READ_END]);
+    	close(p_child_stdout[WRITE_END]);
+    	close(p_child_stdout[READ_END]);
+    	PLOG_ERROR << "failed to fork";
+    	return -1;
+    }
+
+    // in child process
+    else if(pid == 0)
+    {
+    	//closed pipes that the child doesn't need
+    	close(p_child_stdin[WRITE_END]);
+    	close(p_child_stdout[READ_END]);
+
+    	// gives "bad file descriptor" error when trying to read
+    	// also this is after the fork() so we don't need the CLOEXEC flags
+    	//dup3(p_child_stdin[READ_END], STDIN_FILENO, O_CLOEXEC);
+    	//dup3(p_child_stdout[WRITE_END], STDOUT_FILENO, O_CLOEXEC);
+
+    	dup2(p_child_stdin[READ_END], STDIN_FILENO);
+    	dup2(p_child_stdout[WRITE_END], STDOUT_FILENO);
+
+    	close(p_child_stdin[READ_END]);
+    	close(p_child_stdout[WRITE_END]);
+
+    	execvp(args[0], const_cast<char* const*>(args.data()));
+
+    	//we should not reach here
+    	printf("execvp failed");
+    	_exit(1);
+    }
+
+    // in parent process
+    else
+    {
+    	//closed pipes that the parent doesn't need
+    	close(p_child_stdin[READ_END]);
+    	close(p_child_stdout[WRITE_END]);
+
+    	// assign the read and write handles to the pointers passed to the function and return pid
+        if(fd_input == NULL){
+        	close(p_child_stdin[WRITE_END]);
+        }
+        else{
+        	*fd_input = p_child_stdin[WRITE_END];
+        }
+
+        if(fd_output == NULL)
+        {
+        	close(p_child_stdout[READ_END]);
+        }
+        else{
+        	*fd_output = p_child_stdout[READ_END];
+        }
+
+        return pid;
+    }
+}
+
+vector<const char*> utils::getExecArgs(const string &exeName, const vector<string> &args)
+{
 	vector<const char*> _args;
 
 	//first element of the array should also be the executable name
@@ -204,20 +303,14 @@ void utils::execCmd(string &exeName, vector<string> &args, bool showConsole)
 	_args.push_back(NULL);
 
 	string logCmd = "";
-	for(int i=0; i<args.size(); i++)
+	for(int i=0; _args[i] != NULL; i++)
 	{
 		logCmd.append(_args[i]).append(" ");
 	}
 
-	PLOG_INFO << "custom-exe-name: " << exeName << " - custom-cmd: " << logCmd;
+	PLOG_INFO << "exe-name: " << _args[0] << " - cmd: " << logCmd;
 
-	int pid = fork();
-
-	if(pid == 0)
-	{
-		execvp(exeName.c_str(), const_cast<char* const*>(_args.data()));
-		exit(0);
-	}
+	return _args;
 }
 
 void utils::strReplaceAll(string &data, const string &toSearch, const string &replaceStr)
@@ -264,7 +357,7 @@ string utils::sanitizeFilename(const char* filename)
 {
 	string newName("");
 
-	const char illegalChars[9] = { '<', '>', ':', '"', '/', '\\', '|', '?', '*' };
+	const char illegalChars[10] = { '<', '>', ':', '"', '\'', '/', '\\', '|', '?', '*' };
 
 	for(int i=0; i < strlen(filename); i++)
 	{
