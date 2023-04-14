@@ -30,7 +30,7 @@ using namespace std;
 using namespace ggicci;
 using namespace base64;
 
-string versionStr = "0.61.0";
+string versionStr = "0.62.12";
 
 int main(int argc, char *argv[])
 {
@@ -522,13 +522,12 @@ process_result ytdl(const string &url, const string &dlHash, vector<string> &arg
 
 		process_result res = utils::launchExe("./yt-dlp", args, "", dlHash, callback);
 
+		killswitches::remove(dlHash);
+
 		if(res.output.length() == 0)
 		{
-			//TODO: add to windows version
 			throw grb_exception("could not read output from ytdl");
 		}
-
-		killswitches::remove(dlHash);
 
 		return res;
 	}
