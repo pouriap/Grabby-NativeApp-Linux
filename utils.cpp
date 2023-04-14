@@ -2,10 +2,6 @@
 
 #include <mutex>
 #include <sstream>
-#include "utils.h"
-#include "exceptions.h"
-#include "defines.h"
-#include "tinyfiledialogs.h"
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -14,6 +10,12 @@
 #include <sys/wait.h>
 #include <plog/Log.h>
 #include <plog/Initializers/RollingFileInitializer.h>
+#include "utils.h"
+#include "exceptions.h"
+#include "defines.h"
+#include "tinyfiledialogs.h"
+#include "kill_switches.h"
+
 
 using namespace std;
 using namespace ggicci;
@@ -45,8 +47,8 @@ Json utils::parseJSON(const string &JSONstr)
 	}
 }
 
-process_result utils::launchExe(const string &exeName, const vector<string> &args, const string &input, 
-					   const bool &killSwitch, output_callback *callback)
+process_result utils::launchExe(const string &exeName, const vector<string> &args, const string &input,
+		const string &killSwitch, output_callback *callback)
 {
 	if(exeName.length() > MAX_PATH)
 	{
@@ -132,7 +134,7 @@ process_result utils::launchExe(const string &exeName, const vector<string> &arg
 			callback->call(outStr);
 		}
 
-		if(killSwitch)
+		if(killswitches::isActive(killSwitch))
 		{
 			kill(pid, SIGINT);
 			break;
@@ -343,12 +345,16 @@ vector<string> utils::strSplit(const string &str, const char delim)
 
 string utils::fileSaveDialog(const string &filename)
 {
+	std::lock_guard<std::mutex> lock(guiMutex);
+
 	const char* path = tinyfd_saveFileDialog("Save file as", filename.c_str(), 0, NULL, NULL );
 	return (path == NULL)? "" : path;
 }
 
 string utils::folderOpenDialog()
 {
+	std::lock_guard<std::mutex> lock(guiMutex);
+
 	const char* path = tinyfd_selectFolderDialog("Select folder to save files", NULL);
 	return (path == NULL)? "" : path;
 }

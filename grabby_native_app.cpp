@@ -23,13 +23,13 @@
 #include "ytdl_args.h"
 #include "defines.h"
 #include "base64.hpp"
+#include "kill_switches.h"
 #include <gzip/compress.hpp>
 
 using namespace std;
 using namespace ggicci;
 using namespace base64;
 
-map<string, bool> ytdlKillSwitches;
 string versionStr = "0.61.0";
 
 int main(int argc, char *argv[])
@@ -270,7 +270,7 @@ void handle_ytdlget(const Json &msg)
 void handle_ytdlkill(const Json &msg)
 {
 	string dlHash = msg["dlHash"].AsString();
-	ytdlKillSwitches[dlHash] = true;
+	killswitches::activate(dlHash);
 }
 
 //launches FlashGot to perform a download with a DM
@@ -518,10 +518,9 @@ process_result ytdl(const string &url, const string &dlHash, vector<string> &arg
 	try
 	{
 		//create a kill switch for this download and store it in the map
-		ytdlKillSwitches.insert(pair<string, bool>(dlHash, false));
-		bool &killSwitch = ytdlKillSwitches[dlHash];
+		killswitches::add(dlHash);
 
-		process_result res = utils::launchExe("./yt-dlp", args, "", killSwitch, callback);
+		process_result res = utils::launchExe("./yt-dlp", args, "", dlHash, callback);
 
 		if(res.output.length() == 0)
 		{
@@ -529,7 +528,7 @@ process_result ytdl(const string &url, const string &dlHash, vector<string> &arg
 			throw grb_exception("could not read output from ytdl");
 		}
 
-		ytdlKillSwitches.erase(dlHash);
+		killswitches::remove(dlHash);
 
 		return res;
 	}
