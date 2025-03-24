@@ -9,6 +9,8 @@ class ytdl_args
 {
 	protected:
 		std::vector<std::string> args;
+		bool embedThumbnail;
+		bool embedSubs;
 	public:
 		ytdl_args(const Json &msg);
 		virtual ~ytdl_args(void);

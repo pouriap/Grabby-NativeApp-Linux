@@ -30,7 +30,7 @@ using namespace std;
 using namespace ggicci;
 using namespace base64;
 
-string versionStr = "0.62.12";
+string versionStr = "0.63.0";
 
 int main(int argc, char *argv[])
 {
